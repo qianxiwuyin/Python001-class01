@@ -1,0 +1,96 @@
+import math
+import sqlite3
+import pandas as pd
+import jieba
+from pyecharts.charts import WordCloud
+
+#建立一个删除多余词库的表
+filter_words = ['知道','影评','没有','但是','\r\n','还有','这部','thing','觉得','真的','还是','就是']
+#定义一个函数
+def get_movie_id_list(min_comment_count):
+    # 计算总量 统计评论数
+    movie_list=comment_data['MOVIEID'].value_counts()
+    # 筛选数据
+    movie_list=movie_list[movie_list.values>min_comment_count]
+    return movie_list.index
+#构造一个获取电影名和评分
+def get_movie_name_and_score(movie_id):
+    # 找出电影名和评分链接
+    movie_link = 'https://movie.douban.com/subject/{}/'.format(movie_id)
+    # iloc:只取第一行
+    search_result = movie_data[movie_data['链接'] == movie_link].iloc[0]
+    movie_name = search_result['电影名']
+    if isinstance(search_result['评分'],int):
+        movie_score = search_result['评分']
+    elif isinstance(search_result['评分'],float):
+        movie_score = search_result['评分']
+    else:
+        search_result['评分'] = 0
+        movie_score = search_result['评分']
+    return (movie_name,movie_score)
+#数据库链接
+conn = sqlite3.connect('test/douban_comment_data.db')
+comment_data = pd.read_sql_query('select * from comment;',conn)
+#导入评分表格
+movie_data = pd.read_excel('test/douban_movie_data.xlsx')
+
+#print(get_movie_id_list(1000))
+def get_comment_keywords_counts(movie_id,count):
+    comment_list = comment_data[comment_data['MOVIEID']==movie_id]['CONTENT']
+    comment_str_all= ''
+    for comment in comment_list:
+        comment_str_all += comment + '\n'
+    #huoqu分词列表
+    seg_list = list(jieba.cut(comment_str_all))
+    #转换成pandans的series类型的数据
+    keywords_count = pd.Series(seg_list)
+    #统计各个关键词的出现次数
+    #筛选内容分析 分词长度大于1 关键词有实际意义,str.len获取长度
+    keywords_count = keywords_count[keywords_count.str.len()>1]
+    #加~取反 用于反向取词，包含这些词的都不要
+    keywords_count = keywords_count[~keywords_count.str.contains('|'.join(filter_words))]
+    #筛选完之后才要计算
+    keywords_count = keywords_count.value_counts()[:count]
+    return  keywords_count
+
+#制作词云tu
+#movie_id = '1292052'
+#keywords_count = get_comment_keywords_counts(movie_id, 30)
+#keywords_count=list(keywords_count.iteritems())
+#print(keywords_count)
+##电影名的评分
+#movie_name,movie_score = get_movie_name_and_score(movie_id)
+#cloud = WordCloud()
+#cloud.add("",keywords_count,word_size_range=[30,100],shape='diamond')
+#cloud.render('movieskeyword.html')
+
+#每个列表都包含有10个列表
+kw_list_by_score= [[] for _ in range(10)]
+kw_counts_by_score = [[] for _ in range(10)]
+
+movie_id_list = get_movie_id_list(3)
+for movie_id in movie_id_list:
+    word_list = get_comment_keywords_counts(movie_id,30)
+    movie_name,movie_score = get_movie_name_and_score(movie_id)
+    #print(type(movie_name),type(movie_score))
+    try:
+        kw_list_by_score[math.floor(movie_score)].extend(word_list.index)
+        kw_counts_by_score[math.floor(movie_score)].extend(word_list.values)
+    except:
+        print(movie_name)
+#每次创建一个dataframe数据保存该得分区间的top30关键词和出现总次数
+for i in range(10):
+    if kw_counts_by_score[i]:
+        kw30_with_counts = pd.DataFrame({
+            'kw':kw_list_by_score[i],
+            'counts':kw_counts_by_score[i]
+        })
+        kw30_with_counts = kw30_with_counts.groupby(('kw')).sum()
+        kw30_with_counts = kw30_with_counts.sort_values(by='counts',ascending=False)[:30]
+        counts_sum = kw30_with_counts['counts'].sum()
+        kw30_with_counts['percentage'] = kw30_with_counts['counts']/counts_sum
+        kw30_with_counts.to_csv('test/movie_data')
+
+
+
+
