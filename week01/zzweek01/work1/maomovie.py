@@ -13,29 +13,21 @@ selector = lxml.etree.HTML(res.text)
 
 bs_info = bs(res.text, 'html.parser')
 
-#获取电影名称
-file_name = selector.xpath('//div[@class="movie-hover-title"]/span[contains(@class,"name ")]/text()')
-print(f'电影名称：{file_name}')
-#获取电影类型
-tag = selector.xpath('//span[contains(text(),"类型:")]/following-sibling::node()')
-#去除回车
-type = [x.strip() for x in tag if x.strip()!='\n']
-print(f'电影类型：{type}')
-#获取上映日期
-date = selector.xpath('//span[contains(text(),"上映时间:")]/following-sibling::node()')
-dates = [y.strip() for y in date if y.strip()!='\n']
-print(f'上映日期：{dates}')
 
-# 将数据存放到列表里面
-mylist = [file_name, type, dates]
-movie1 = pd.DataFrame(data=mylist)
-movie1 = movie1.sort_values(by=0, axis=0)
+for tags in bs_info.find_all('div',attrs={'class':'movie-item-hover'}):
+    for atags in tags.find_all('a',):
+        file_name='https://maoyan.com'+atags.get('href')
+        print(file_name)
+        for btags in atags.select('div[class="movie-hover-title movie-hover-brief"]'):
+            title=btags.get('title')
+            print(title)
+            for ctags in btags.select('div[class="movie-hover-title movie-hover-brief"]>span.hover-tag'):
+                dates=ctags.next_sibling.strip()
+                print(dates)
+                #next_sibling 查找下一个元素
+                output = f'{title}\t,{file_name}\t,{dates}\t\n'
+                with open('./maoyanmovie.csv', 'a+', encoding='utf-8-sig') as article:
+                    article.write(output)
 
-# windows需要使用gbk字符集
-movie1.to_csv('./moviedata.csv', encoding='gbk', index=False, header=False)
-# 控制请求的频率，引入了time模块
-from time import sleep
-
-sleep(10)
 
 
